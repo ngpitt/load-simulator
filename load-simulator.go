@@ -17,13 +17,13 @@ func client(wg *sync.WaitGroup, stop <-chan struct{}, url string, responses *int
 		case <-stop:
 			return
 		default:
-			r, err := http.Get(url)
-			if err != nil {
-				panic(err.Error())
-			}
-			r.Body.Close()
-			atomic.AddInt32(responses, 1)
 		}
+		r, err := http.Get(url)
+		if err != nil {
+			panic(err.Error())
+		}
+		r.Body.Close()
+		atomic.AddInt32(responses, 1)
 	}
 }
 
@@ -34,10 +34,10 @@ func stats(wg *sync.WaitGroup, stop <-chan struct{}, responses *int32) {
 		case <-stop:
 			return
 		default:
-			fmt.Print("\r", *responses, " responses per second...")
-			atomic.SwapInt32(responses, 0)
-			time.Sleep(time.Second)
 		}
+		fmt.Print("\r", *responses, " responses per second...")
+		atomic.SwapInt32(responses, 0)
+		time.Sleep(time.Second)
 	}
 }
 
