@@ -3,31 +3,49 @@ package main
 import (
 	"flag"
 	"log"
-	"math"
 	"net/http"
 	"sync"
-	"sync/atomic"
 	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/pkg/apis/autoscaling/v1"
+	"k8s.io/client-go/rest"
 )
+
+func getHpa(name string, client *kubernetes.Clientset) *v1.HorizontalPodAutoscaler {
+	hpa, err := client.AutoscalingV1().HorizontalPodAutoscalers(metav1.NamespaceDefault).Get(name, metav1.GetOptions{})
+	if err != nil {
+		panic(err.Error())
+	}
+	return hpa
+}
 
 func main() {
 	url := flag.String("url", "", "target url")
-	clients := flag.Int("clients", 8, "number of clients")
-	runDuration := flag.Duration("run_duration", 2*time.Minute, "run duration")
-	sleepDuration := flag.Duration("sleep_duration", 30*time.Second, "sleep duration")
+	numClients := flag.Int("clients", 8, "number of clients")
+	hpaName := flag.String("hpa", "", "target app hpa")
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		panic(err.Error())
+	}
+	client, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		panic(err.Error())
+	}
 	flag.Parse()
 	for {
-		log.Println("Beginning", runDuration.String(), "run...")
-		stop := make(chan struct{})
+		hpa := getHpa(*hpaName, client)
+		log.Print("Targeting ", *hpa.Spec.TargetCPUUtilizationPercentage, "% CPU utilization with ", *numClients, " clients...\n")
+		stopCh := make(chan struct{})
 		wg := sync.WaitGroup{}
-		wg.Add(*clients + 1)
-		responses := int32(0)
-		for i := 0; i < *clients; i++ {
+		wg.Add(*numClients)
+		for i := 0; i < *numClients; i++ {
 			go func() {
 				defer wg.Done()
 				for {
 					select {
-					case <-stop:
+					case <-stopCh:
 						return
 					default:
 					}
@@ -36,27 +54,31 @@ func main() {
 						panic(err.Error())
 					}
 					r.Body.Close()
-					atomic.AddInt32(&responses, 1)
 				}
 			}()
 		}
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case <-stop:
-					return
-				default:
+		rampingUp := true
+		for {
+			time.Sleep(5 * time.Second)
+			hpa := getHpa(*hpaName, client)
+			log.Print(*hpa.Status.CurrentCPUUtilizationPercentage, "% current CPU utilization...\n")
+			if rampingUp {
+				if *hpa.Status.CurrentCPUUtilizationPercentage > *hpa.Spec.TargetCPUUtilizationPercentage {
+					rampingUp = false
 				}
-				log.Println(math.Floor(float64(atomic.LoadInt32(&responses))/5+0.5), "responses per second...")
-				atomic.SwapInt32(&responses, 0)
-				time.Sleep(5 * time.Second)
+			} else if *hpa.Status.CurrentCPUUtilizationPercentage <= *hpa.Spec.TargetCPUUtilizationPercentage {
+				log.Print(*hpa.Spec.TargetCPUUtilizationPercentage, "% CPU utilization reached, waiting for scale down...\n")
+				break
 			}
-		}()
-		time.Sleep(*runDuration)
-		close(stop)
+		}
+		close(stopCh)
 		wg.Wait()
-		log.Println("Sleeping for", sleepDuration.String(), "...")
-		time.Sleep(*sleepDuration)
+		for {
+			time.Sleep(5 * time.Second)
+			hpa := getHpa(*hpaName, client)
+			if hpa.Status.CurrentReplicas == *hpa.Spec.MinReplicas {
+				break
+			}
+		}
 	}
 }
