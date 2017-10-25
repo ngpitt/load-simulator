@@ -61,14 +61,18 @@ func main() {
 		for {
 			time.Sleep(5 * time.Second)
 			hpa := getHpa(*hpaName, client)
-			log.Print(*hpa.Status.CurrentCPUUtilizationPercentage, "% current CPU utilization...\n")
-			if rampingUp {
-				if *hpa.Status.CurrentCPUUtilizationPercentage > *hpa.Spec.TargetCPUUtilizationPercentage+5 {
-					rampingUp = false
+			if hpa.Status.CurrentCPUUtilizationPercentage == nil {
+				log.Print("Waiting for CPU utilization data...\n")
+			} else {
+				log.Print(*hpa.Status.CurrentCPUUtilizationPercentage, "% current CPU utilization...\n")
+				if rampingUp {
+					if *hpa.Status.CurrentCPUUtilizationPercentage > *hpa.Spec.TargetCPUUtilizationPercentage+5 {
+						rampingUp = false
+					}
+				} else if *hpa.Status.CurrentCPUUtilizationPercentage <= *hpa.Spec.TargetCPUUtilizationPercentage+5 {
+					log.Print(*hpa.Spec.TargetCPUUtilizationPercentage, "% CPU utilization reached, waiting for scale down...\n")
+					break
 				}
-			} else if *hpa.Status.CurrentCPUUtilizationPercentage <= *hpa.Spec.TargetCPUUtilizationPercentage+5 {
-				log.Print(*hpa.Spec.TargetCPUUtilizationPercentage, "% CPU utilization reached, waiting for scale down...\n")
-				break
 			}
 		}
 		close(stopCh)
