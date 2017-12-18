@@ -1,4 +1,4 @@
 package: github.com/ngpitt/load-simulator
 imports:
 - package: k8s.io/client-go
-  version: release-4.0
+  version: 651d7a8818705e25181c672c1d71524a08e42bb0
