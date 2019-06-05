@@ -14,7 +14,7 @@ import (
 )
 
 func getHpa(name string, client *kubernetes.Clientset) *v1.HorizontalPodAutoscaler {
-	hpa, err := client.AutoscalingV1().HorizontalPodAutoscalers(metav1.NamespaceDefault).Get(name, metav1.GetOptions{})
+	hpa, err := client.Autoscaling().HorizontalPodAutoscalers(metav1.NamespaceDefault).Get(name, metav1.GetOptions{})
 	if err != nil {
 		panic(err.Error())
 	}
